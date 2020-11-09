@@ -12,6 +12,26 @@ CALL = 0b01010000
 RET = 0b00010001
 ADD = 0b10100000
 
+# sprint
+
+L_MASK = 0b00000100
+G_MASK = 0b00000010
+E_MASK = 0b00000001
+# instructions
+CMP = 0b10100111
+JMP = 0b01010100
+JNE = 0b01010110
+JEQ = 0b01010101
+
+# stretch problems
+AND = 0b10101000
+OR = 0b10101010
+NOT = 0b01101001
+XOR = 0b10101011
+SHL = 0b10101100
+SHR = 0b10101101
+MOD = 0b10100100
+
 
 class CPU:
     """Main CPU class."""
@@ -34,12 +54,27 @@ class CPU:
         self.branchtable[CALL] = self.call
         self.branchtable[RET] = self.ret
         self.branchtable[ADD] = self.add
+        # sprint
+        self.branchtable[CMP] = self.cmp
+        self.branchtable[JMP] = self.jmp
+        self.branchtable[JNE] = self.jne
+        self.branchtable[JEQ] = self.jeq
+        # flag
+        self.flag = 0
+
+        # stretch goal
+        self.branchtable[AND] = self.and_func
+        self.branchtable[OR] = self.or_func
+        self.branchtable[NOT] = self.not_func
+        self.branchtable[XOR] = self.xor
+        # self.branchtable[SHL] = self.shl
+        # self.branchtable[SHR] = self.shr
+        # self.branchtable[MOD] = self.mod
 
     def ram_read(self, MAR):
         return self.ram[MAR]
 
     def ram_write(self, MAR, MDR):
-
         self.ram[MAR] = MDR
 
     def load(self):
@@ -71,8 +106,65 @@ class CPU:
             self.reg[reg_a] += self.reg[reg_b]
         elif op == "MUL":
             self.reg[reg_a] *= self.reg[reg_b]
+
+        elif op == "CMP":
+            if self.reg[reg_a] < self.reg[reg_b]:
+                self.flag = L_MASK
+            elif self.reg[reg_a] > self.reg[reg_b]:
+                self.flag = G_MASK
+            else:
+                self.flag = E_MASK
+        # STRETCH
+        elif op == "AND":
+            self.reg[reg_a] = self.reg[reg_a] & self.reg[reg_b]
+        elif op == "OR":
+            self.reg[reg_a] = self.reg[reg_a] | self.reg[reg_b]
+        elif op == "NOT":
+            self.reg[reg_a] = ~self.reg[reg_a]
+            self.reg[reg_b] = ~self.reg[reg_b]
+        elif op == "XOR":
+            self.reg[reg_a] = self.reg[reg_a] ^ self.reg[reg_b]
+        elif op == "SHL":
+            self.reg[reg_a] << self.reg[reg_b]
+        elif op == "SHR":
+            self.reg[reg_a] >> self.reg[reg_b]
+        elif op == "MOD":
+            if self.reg[reg_b] == 0:
+                print("Error, second value is 0")
+                self.pc = HLT
+            else:
+                remainder = self.reg[reg_a] % self.reg[reg_b]
+                self.reg[reg_a] = remainder
         else:
             raise Exception("Unsupported ALU operation")
+
+    def operation_helper(self, op):
+        operand_a = self.ram[self.pc + 1]
+        operand_b = self.ram[self.pc + 2]
+        self.alu(op, operand_a, operand_b)
+        self.pc += 3
+
+    # STRETCH - AND` `OR` `XOR` `NOT` `SHL` `SHR` `MOD`
+    def and_func(self):
+        self.operation_helper("AND")
+
+    def or_func(self):
+        self.operation_helper("OR")
+
+    def not_func(self):
+        self.operation_helper("NOT")
+
+    def xor(self):
+        self.operation_helper("XOR")
+
+    def shl(self):
+        self.operation_helper("SHL")
+
+    def shr(self):
+        self.operation_helper("SHR")
+
+    def mod(self):
+        self.operation_helper("MOD")
 
     def trace(self):
         """
@@ -84,7 +176,8 @@ class CPU:
             f"TRACE: %02X | %02X %02X %02X |"
             % (
                 self.pc,
-
+                # self.fl,
+                # self.ie,
                 self.ram_read(self.pc),
                 self.ram_read(self.pc + 1),
                 self.ram_read(self.pc + 2),
@@ -98,16 +191,10 @@ class CPU:
         print()
 
     def mul(self):
-        operand_a = self.ram[self.pc + 1]
-        operand_b = self.ram[self.pc + 2]
-        self.alu("MUL", operand_a, operand_b)
-        self.pc += 3
+        self.operation_helper("MUL")
 
     def add(self):
-        operand_a = self.ram[self.pc + 1]
-        operand_b = self.ram[self.pc + 2]
-        self.alu("ADD", operand_a, operand_b)
-        self.pc += 3
+        self.operation_helper("ADD")
 
     def ldi(self):
         operand_a = self.ram[self.pc + 1]
@@ -116,6 +203,7 @@ class CPU:
         self.pc += 3
 
     def hlt(self):
+        # stops the program
         self.running = False
 
     def prn(self):
@@ -151,6 +239,31 @@ class CPU:
         ret_addr = self.ram[self.reg[self.sp]]
         self.reg[self.sp] += 1
         self.pc = ret_addr
+
+    def cmp(self):
+        operand_a = self.ram[self.pc + 1]
+        operand_b = self.ram[self.pc + 2]
+        self.alu("CMP", operand_a, operand_b)
+        self.pc += 3
+
+    def jmp(self):
+        self.pc += 1
+        given_reg = self.ram[self.pc]
+        self.pc = self.reg[given_reg]
+
+    def jeq(self):
+        given_reg = self.ram[self.pc + 1]
+        if self.flag == E_MASK:
+            self.pc = self.reg[given_reg]
+        else:
+            self.pc += 2
+
+    def jne(self):
+        given_reg = self.ram[self.pc + 1]
+        if self.flag != E_MASK:
+            self.pc = self.reg[given_reg]
+        else:
+            self.pc += 2
 
     def run(self):
         """Run the CPU."""
